@@ -1,5 +1,5 @@
 import inspect
-from collections import OrderedDict
+
 
 import numpy as np
 
@@ -37,7 +37,7 @@ class Obj(object):
         # Nothing has to be overrided in subclasses.
 
         # Determined by append
-        self.children = OrderedDict()  # indexed by placement name
+        self.children = dict()  # indexed by placement name
         # Determined by mark
         self.markers = []
         # Determined by add_transform
@@ -215,7 +215,7 @@ class Obj(object):
             "Argument to add_transform should be a function"
         assert len(inspect.getargspec(transform).args) == 1, \
             "transform function should take a single argument " + \
-            "of a type OrderedDict. This argument represents " + \
+            "of a type dict. This argument represents " + \
             "xml to be transformed."
         self.transforms.append(transform)
         return self
@@ -382,7 +382,7 @@ class Obj(object):
             see generate_xml() for parameter documentation
         Returns merged xml_dict
         '''
-        full_xml_dict = OrderedDict()
+        full_xml_dict = dict()
         # First add all of our own xml
         self.xml_dict = self.generate_xml_dict()
 
@@ -415,7 +415,7 @@ class Obj(object):
             if "site" not in body:
                 body["site"] = []
             for marker in self.markers:
-                site = OrderedDict()
+                site = dict()
                 site['@name'] = marker['name']
                 site['@pos'] = marker['position']
                 site['@size'] = marker['size']
@@ -496,7 +496,7 @@ class Obj(object):
                 udd_callbacks += child.to_udd_callback()
         return udd_callbacks
 
-    @returns(OrderedDict)
+    @returns(dict)
     def generate_xml_dict(self):
         '''
         Generate XML DOM nodes needed for MuJoCo model.

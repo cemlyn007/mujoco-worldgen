@@ -1,10 +1,10 @@
 # Automatically generated. Do not modify!
 '''
-We represent XML as OrderedDict and lists.
-Some nodes have OrderedDict value (mostly top-lever such as worldbody.
+We represent XML as dict and lists.
+Some nodes have dict value (mostly top-lever such as worldbody.
 some nodes have list values (mostly lower level). However,
 MuJoCo is not consistent with it. We automatically checked in many XMLs
-if given values occur once (then, they are converted to OrderedDict) or
+if given values occur once (then, they are converted to dict) or
 multiple times (then, they are converted to list). script get_const.py
 determines it, and writes result to const.py. Value in variable list_types
 describes nodes that of a type list.

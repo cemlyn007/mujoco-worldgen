@@ -1,4 +1,4 @@
-from collections import OrderedDict
+
 import ast
 import re
 from decimal import Decimal, getcontext
@@ -22,7 +22,7 @@ Internal notes:
 '''
 
 
-@accepts(OrderedDict)
+@accepts(dict)
 def normalize(xml_dict):
     '''
     The starting point is a dictionary of the form returned by xmltodict.
@@ -32,7 +32,7 @@ def normalize(xml_dict):
         - some nodes have OrderDict value (mostly top-lever such as worldbody)
           some nodes have list values (mostly lower level). Check const.py
           for more information.
-        - parameters ('@name', etc) never have list or OrderedDict values
+        - parameters ('@name', etc) never have list or dict values
         - "true" and "false" are converted to bool()
         - numbers are converted to floats
         - vectors are converted to np.ndarray()
@@ -44,7 +44,7 @@ def normalize(xml_dict):
     if '@model' in xml_dict:
         del xml_dict['@model']
     for key, value in xml_dict.items():
-        if isinstance(value, OrderedDict):
+        if isinstance(value, dict):
             # There is one exception.
             # <default> symbol occurs twice.
             # Once as OrderDict (top-level), once as list (lower-level).
@@ -176,14 +176,14 @@ def normalize_value(value):
     raise ValueError('Cannot normalize {}: {}'.format(type(value), value))
 
 
-@accepts((OrderedDict, list))
+@accepts((dict, list))
 def stringify(xml_dict):
     '''
     De-normalize xml dictionary (or list), converting all pythonic values (arrays, bools)
         into strings that will be used in the final XML.
     This is the opposite of normalize().
     '''
-    if isinstance(xml_dict, OrderedDict):
+    if isinstance(xml_dict, dict):
         enumeration = list(xml_dict.items())
     elif isinstance(xml_dict, list):
         enumeration = enumerate(xml_dict)
@@ -198,7 +198,7 @@ def stringify(xml_dict):
                     xml_dict[key] = vec2str(value)
                 else:
                     stringify(value)
-        elif isinstance(value, OrderedDict):
+        elif isinstance(value, dict):
             stringify(value)
         elif isinstance(value, (np.ndarray, tuple)):
             xml_dict[key] = vec2str(value)

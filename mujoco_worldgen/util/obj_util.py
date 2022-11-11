@@ -1,5 +1,5 @@
 import numpy as np
-from collections import OrderedDict
+
 # TODO: Write more comments.
 
 from mujoco_worldgen.util.types import accepts, returns, maybe
@@ -24,7 +24,7 @@ def get_camera_xyaxes(camera_pos, target_pos):
     return np.concatenate((cross, cross2))
 
 
-@accepts(OrderedDict, str, maybe(np.ndarray))
+@accepts(dict, str, maybe(np.ndarray))
 def add_annotation_bound(xml_dict, annotation_name, bound):
     '''
     Add an annotation bounding box to and XML dictionary.
@@ -43,14 +43,14 @@ def add_annotation_bound(xml_dict, annotation_name, bound):
     bodies = [body for body in worldbody['body'] if body.get('@name') != name]
     rgba = np.random.uniform(size=4)
     rgba[3] = 0.1  # annotation is almost transparent.
-    geom = OrderedDict([('@conaffinity', 0),
+    geom = dict([('@conaffinity', 0),
                         ('@contype', 0),
                         ('@mass', 0.0),
                         ('@pos', np.zeros(3)),
                         ('@rgba', rgba),
                         ('@size', (bound[1] - bound[0]) / 2),  # halfsize
                         ('@type', 'box')])
-    annotation = OrderedDict([('@name', name),
+    annotation = dict([('@name', name),
                               ('@pos', bound.mean(axis=0)),  # center pos
                               ('geom', [geom])])
     bodies.append(annotation)
@@ -58,11 +58,11 @@ def add_annotation_bound(xml_dict, annotation_name, bound):
     print('adding annotation bound (size)', name, bound[1] - bound[0])
 
 
-@accepts(OrderedDict)
-@returns(OrderedDict)
+@accepts(dict)
+@returns(dict)
 def get_xml_meshes(xml_dict):
     ''' Get dictionary of all the mesh names -> filenames in a parsed XML. '''
-    meshes = OrderedDict()
+    meshes = dict()
     for mesh in xml_dict.get('asset', {}).get('mesh', []):
         assert '@name' in mesh, "Mesh missing name: {}".format(mesh)
         assert '@file' in mesh, "Mesh missing file: {}".format(mesh)
@@ -73,7 +73,7 @@ def get_xml_meshes(xml_dict):
     return meshes
 
 
-@accepts(OrderedDict, str)
+@accepts(dict, str)
 def recursive_rename(xml_dict, prefix):
     attrs = ["@name", "@joint", "@jointinparent", "@class", "@source",
              "@target", "@childclass", "@body1", "@body2", "@mesh",
@@ -83,11 +83,11 @@ def recursive_rename(xml_dict, prefix):
              "position", "default", "weld", "exclude", "mesh",
              "site", "pair", "jointpos", "touch", "texture", "material",
              "fixed", "spatial", "motor", "actuatorfrc"]
-    if not isinstance(xml_dict, OrderedDict):
+    if not isinstance(xml_dict, dict):
         return
     for key in list(xml_dict.keys()):
         value_dict = xml_dict[key]
-        if isinstance(value_dict, OrderedDict):
+        if isinstance(value_dict, dict):
             value_dict = [value_dict]
         if key in names:
             assert isinstance(
@@ -147,7 +147,7 @@ def get_body_xml_node(name, use_joints=False):
         joints - if True, add 6 degrees of freedom joints (slide, hinge)
     Returns named XML body node.
     '''
-    body = OrderedDict()
+    body = dict()
     body['@name'] = name
     body['@pos'] = np.zeros(3)
 
@@ -155,7 +155,7 @@ def get_body_xml_node(name, use_joints=False):
         joints = []
         for axis_type in ('slide', 'hinge'):
             for i, axis in enumerate(np.eye(3)):
-                joint = OrderedDict()
+                joint = dict()
                 joint['@name'] = "%s:%s%d" % (name, axis_type, i)
                 joint['@axis'] = axis
                 joint['@type'] = axis_type

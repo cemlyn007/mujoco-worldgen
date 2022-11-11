@@ -1,4 +1,4 @@
-from collections import OrderedDict
+
 from decimal import getcontext
 from os.path import abspath, dirname, join, exists
 
@@ -10,7 +10,7 @@ from mujoco_worldgen.parser.normalize import normalize, stringify
 from mujoco_worldgen.transforms import closure_transform
 from mujoco_worldgen.util.path import worldgen_path
 from mujoco_worldgen.util.types import accepts, returns
-
+import collections
 getcontext().prec = 4
 
 '''
@@ -27,7 +27,7 @@ Every other method should be considered internal!
 
 
 @accepts(str, bool)
-@returns(OrderedDict)
+@returns(dict)
 def parse_file(xml_path, enforce_validation=True):
     '''
     Reads xml from xml_path, consolidates all includes in xml, and returns
@@ -37,16 +37,16 @@ def parse_file(xml_path, enforce_validation=True):
     with open(xml_path) as f:
         xml_string = f.read()
 
-    xml_doc_dict = xmltodict.parse(xml_string.strip())
+    xml_doc_dict = collections.dict(list(xmltodict.parse(xml_string.strip()).items()))
     assert 'mujoco' in xml_doc_dict, "XML must contain <mujoco> node"
     xml_dict = xml_doc_dict['mujoco']
-    assert isinstance(xml_dict, OrderedDict), \
+    assert isinstance(xml_dict, dict), \
         "Invalid node type {}".format(type(xml_dict))
     preprocess(xml_dict, xml_path, enforce_validation=enforce_validation)
     return xml_dict
 
 
-@accepts(OrderedDict)
+@accepts(dict)
 @returns(str)
 def unparse_dict(xml_dict):
     '''
@@ -54,16 +54,16 @@ def unparse_dict(xml_dict):
     Note: this modifies xml_dict in place to have strings instead of values.
     '''
     stringify(xml_dict)
-    xml_doc_dict = OrderedDict(mujoco=xml_dict)
+    xml_doc_dict = dict(mujoco=xml_dict)
     return xmltodict.unparse(xml_doc_dict, pretty=True)
 
 
-@accepts(OrderedDict, str, bool)
+@accepts(dict, str, bool)
 def preprocess(xml_dict, root_xml_path, enforce_validation=True):
     '''
     All the steps to turn XML into Worldgen readable form:
     - normalize: changes strings to floats / vectors / bools, and
-                 turns consistently nodes to OrderedDict and List
+                 turns consistently nodes to dict and List
     - name_meshes: some meshes are missing names. Here we give default names.
     - rename_defaults: some defaults are global, we give them names so
                        they won't be anymore.
@@ -77,7 +77,7 @@ def preprocess(xml_dict, root_xml_path, enforce_validation=True):
         validate(xml_dict)
 
 
-@accepts(OrderedDict, str)
+@accepts(dict, str)
 def set_absolute_paths(xml_dict, root_xml_path):
     dirnames = ["@meshdir", "@texturedir"]
     if "compiler" in xml_dict:
@@ -93,14 +93,14 @@ def set_absolute_paths(xml_dict, root_xml_path):
                         'assets', path.split(asset_dir)[-1])
 
 
-@accepts(OrderedDict, str, bool)
+@accepts(dict, str, bool)
 def extract_includes(xml_dict, root_xml_path, enforce_validation=True):
     '''
     extracts "include" xmls and substitutes them.
     '''
     def transform_include(node):
         if "include" in node:
-            if isinstance(node["include"], OrderedDict):
+            if isinstance(node["include"], dict):
                 node["include"] = [node["include"]]
             include_xmls = []
             for include_dict in node["include"]:
@@ -121,7 +121,7 @@ def extract_includes(xml_dict, root_xml_path, enforce_validation=True):
     closure_transform(transform_include)(xml_dict)
 
 
-@accepts(OrderedDict, OrderedDict)
+@accepts(dict, dict)
 @returns(None.__class__)
 def update_mujoco_dict(dict_a, dict_b):
     '''
@@ -139,12 +139,12 @@ def update_mujoco_dict(dict_a, dict_b):
             assert dict_a[key] == value, "key=%s\n,Trying to merge dictionaries. " \
                                          "They don't agree on value: %s vs %s" % (key, dict_a[key], value)
         else:
-            assert isinstance(dict_a[key], OrderedDict), "dict_a = %s\nkey=%s\nExpected dict_a[key] to be a OrderedDict." % (dict_a, key)
-            assert(isinstance(value, OrderedDict))
+            assert isinstance(dict_a[key], dict), "dict_a = %s\nkey=%s\nExpected dict_a[key] to be a dict." % (dict_a, key)
+            assert(isinstance(value, dict))
             update_mujoco_dict(dict_a[key], value)
 
 
-@accepts(OrderedDict)
+@accepts(dict)
 def validate(xml_dict):
     '''
     If we make assumptions elsewhere in XML processing, then they should be

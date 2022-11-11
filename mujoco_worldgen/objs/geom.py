@@ -1,4 +1,4 @@
-from collections import OrderedDict
+
 
 import numpy as np
 
@@ -22,12 +22,12 @@ class Geom(Obj):
         # TODO: Current worldgen doesn't respect height.
         for i in range(2):
             max_size[i] = min(max_size[i], placement_size[i])
-        self.placements = OrderedDict()
+        self.placements = dict()
         if self.geom_type == "box":
             self.size = min_size + (max_size - min_size) * \
                 random_state.uniform(size=3)
             top_height = placement_size[2] - self.size[2]
-            top = OrderedDict(origin=(0, 0, self.size[2]),
+            top = dict(origin=(0, 0, self.size[2]),
                               size=(self.size[0], self.size[1], top_height))
             self.placements['top'] = top
         elif self.geom_type == "sphere":
@@ -48,7 +48,7 @@ class Geom(Obj):
             e.g. 'worldbody', 'materials', 'assets'
         '''
         body = get_body_xml_node(self.name, use_joints=True)
-        geom = OrderedDict()
+        geom = dict()
         geom['@size'] = self.size * 0.5
         body['@pos'] = self.size * 0.5
         if self.geom_type == 'cylinder':
@@ -60,6 +60,6 @@ class Geom(Obj):
         if self.rgba is not None:
             geom['@rgba'] = self.rgba
         body['geom'] = [geom]
-        xml_dict = OrderedDict()
-        xml_dict['worldbody'] = OrderedDict(body=[body])
+        xml_dict = dict()
+        xml_dict['worldbody'] = dict(body=[body])
         return xml_dict

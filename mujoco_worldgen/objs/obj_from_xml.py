@@ -5,7 +5,7 @@
 
 import glob
 import os
-from collections import OrderedDict
+
 
 import numpy as np
 
@@ -30,7 +30,7 @@ class ObjFromXML(Obj):
         # Only do this once, because it sometimes picks object at random
         self.xml_path = self._generate_xml_path(random_state)
         self.xml = parse_file(self.xml_path)
-        self.placements = OrderedDict()
+        self.placements = dict()
         bodies = []
         for body in self.xml["worldbody"]["body"]:
             name = body.get('@name', '')
@@ -63,7 +63,7 @@ class ObjFromXML(Obj):
                     if world_params.show_outer_bounds:
                         bodies.append(body)
                     continue
-                placement = OrderedDict(size=size, origin=origin)
+                placement = dict(size=size, origin=origin)
                 self.placements[placement_name] = placement
 
         for body in self.xml["worldbody"]["body"]:
@@ -82,13 +82,12 @@ class ObjFromXML(Obj):
         joint_names = []
         if 'joint' not in body:
             body['joint'] = []
-        if isinstance(body['joint'], OrderedDict):
+        if isinstance(body['joint'], dict):
             body['joint'] = [body['joint']]
         for i, slide_axis in enumerate(np.eye(3)):
             found = False
             for joint in body['joint']:
-                # TODO: The error is caused by expecting that the type is OrderedDict but our change has made it dict ;D
-                if not isinstance(joint, OrderedDict):
+                if not isinstance(joint, dict):
                     continue
                 if joint.get('@type') != 'slide':
                     continue
@@ -100,7 +99,7 @@ class ObjFromXML(Obj):
                     found = True
                     break  # Found axis
             if not found:  # add this joint
-                slide = OrderedDict()
+                slide = dict()
                 joint_name = self.name + ':slide%d' % i
                 slide['@name'] = joint_name
                 slide['@type'] = 'slide'

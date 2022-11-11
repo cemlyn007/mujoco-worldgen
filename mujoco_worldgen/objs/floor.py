@@ -1,4 +1,4 @@
-from collections import OrderedDict
+
 
 import numpy as np
 
@@ -18,8 +18,8 @@ class Floor(Obj):
         super(Floor, self).__init__()
 
     def generate(self, random_state, world_params, placement_size):
-        top = OrderedDict(origin=(0, 0, 0), size=placement_size)
-        self.placements = OrderedDict(top=top)
+        top = dict(origin=(0, 0, 0), size=placement_size)
+        self.placements = dict(top=top)
         self.size = np.array([placement_size[0], placement_size[1], 0.0])
 
     def generate_xml_dict(self):
@@ -28,7 +28,7 @@ class Floor(Obj):
         pos = self.absolute_position
         pos[0] += self.size[0] / 2.0
         pos[1] += self.size[1] / 2.0
-        geom = OrderedDict()
+        geom = dict()
 
         geom['@name'] = self.name
         geom['@pos'] = pos
@@ -44,12 +44,12 @@ class Floor(Obj):
         geom['@name'] = self.name
 
         # body is necessary to place sites.
-        body = OrderedDict()
+        body = dict()
         body["@name"] = self.name
         body["@pos"] = pos
 
-        worldbody = OrderedDict([("geom", [geom]),
+        worldbody = dict([("geom", [geom]),
                                  ("body", [body])])
 
-        xml_dict = OrderedDict(worldbody=worldbody)
+        xml_dict = dict(worldbody=worldbody)
         return xml_dict

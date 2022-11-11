@@ -1,5 +1,5 @@
 import hashlib
-from collections import OrderedDict
+
 
 import numpy as np
 
@@ -37,13 +37,13 @@ class Material(Obj):
             self.xml_dict = [self._material_rgba,
                              self._material_checker,
                              self._material_random][choice](random_state)
-        self.xml_dict = OrderedDict(asset=self.xml_dict)
+        self.xml_dict = dict(asset=self.xml_dict)
 
     def generate_xml_dict(self):
         return self.xml_dict
 
     def _material_rgba(self, random_state, rgba=None):
-        material_attrs = OrderedDict([('@name', self.name),
+        material_attrs = dict([('@name', self.name),
                                       ('@specular', 0.1 + 0.2 *
                                        random_state.uniform()),
                                       ('@shininess', 0.1 + 0.2 *
@@ -56,27 +56,27 @@ class Material(Obj):
             material_attrs['@rgba'] = random_state.uniform(rgba[0], rgba[1])
         else:
             material_attrs['@rgba'] = rgba
-        return OrderedDict(material=[material_attrs])
+        return dict(material=[material_attrs])
 
     def _material_checker(self, random_state):
-        texture_attr = OrderedDict([('@name', "texture_" + self.name),
+        texture_attr = dict([('@name', "texture_" + self.name),
                                     ('@builtin', 'checker'),
                                     ('@height', random_state.randint(5, 100)),
                                     ('@width', random_state.randint(5, 100)),
                                     ('@type', '2d'),
                                     ('@rgb1', [0, 0, 0])])
         texture_attr['@rgb2'] = 0.1 + 0.8 * random_state.uniform(size=3)
-        xml_dict = OrderedDict(texture=[texture_attr])
+        xml_dict = dict(texture=[texture_attr])
         texrepeat = [random_state.randint(
             5, 100), random_state.randint(5, 100)]
-        xml_dict["material"] = [OrderedDict([('@name', self.name),
+        xml_dict["material"] = [dict([('@name', self.name),
                                              ('@texrepeat', texrepeat),
                                              ('@texture', "texture_" + self.name)])]
         return xml_dict
 
     def _material_random(self, random_state):
         random = 0.1 + 0.8 * random_state.uniform()
-        texture_attr = OrderedDict([('@name', "texture_" + self.name),
+        texture_attr = dict([('@name', "texture_" + self.name),
                                     ('@builtin', 'flat'),
                                     ('@mark', 'random'),
                                     ('@type', '2d'),
@@ -85,15 +85,15 @@ class Material(Obj):
                                     ('@rgb1', [1, 1, 1]),
                                     ('@rgb2', [1, 1, 1]),
                                     ('@random', random)])
-        material = OrderedDict([('@name', self.name),
+        material = dict([('@name', self.name),
                                 ('@texture', "texture_" + self.name)])
-        xml_dict = OrderedDict([('texture', [texture_attr]),
+        xml_dict = dict([('texture', [texture_attr]),
                                 ('material', [material])])
         return xml_dict
 
     def _material_texture(self, random_state, texture, texture_type=None,
                           grid_layout=None, grid_size=None, rgba=None):
-        texture_attr = OrderedDict([
+        texture_attr = dict([
             ('@name', "texture_" + self.name),
             ('@type', '2d'),
             ('@builtin', 'none'),
@@ -107,7 +107,7 @@ class Material(Obj):
             texture_attr["@gridlayout"] = '.U..LFRB.D..' if grid_layout is None else grid_layout
             texture_attr["@gridsize"] = '3 4' if grid_size is None else grid_size
 
-        material = OrderedDict([
+        material = dict([
             ('@name', self.name),
             ('@texture', "texture_" + self.name),
         ])
@@ -115,7 +115,7 @@ class Material(Obj):
         if rgba is not None:
             material['@rgba'] = rgba
 
-        return OrderedDict([
+        return dict([
             ('texture', [texture_attr]),
             ('material', [material]),
         ])

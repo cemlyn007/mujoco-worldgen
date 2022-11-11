@@ -1,5 +1,5 @@
 import logging
-from collections import OrderedDict
+
 from copy import deepcopy as copy
 
 import numpy as np
@@ -31,14 +31,14 @@ class WorldBuilder(Obj):
 
     def generate_xml_dict(self):
         ''' Get the mujoco header XML dict. It contains compiler, size and option nodes. '''
-        compiler = OrderedDict()
+        compiler = dict()
         compiler['@angle'] = 'radian'
         compiler['@coordinate'] = 'local'
         compiler['@meshdir'] = worldgen_path('assets/stls')
         compiler['@texturedir'] = worldgen_path('assets/textures')
-        option = OrderedDict()
-        option["flag"] = OrderedDict([("@warmstart", "enable")])
-        return OrderedDict([('compiler', compiler),
+        option = dict()
+        option["flag"] = dict([("@warmstart", "enable")])
+        return dict([('compiler', compiler),
                             ('option', option)])
 
     def generate_xinit(self):
@@ -63,10 +63,10 @@ class WorldBuilder(Obj):
         return xml_dict
 
     def get_sim(self):
-        self.placements = OrderedDict()
+        self.placements = dict()
         self.placements["top"] = {"origin": np.zeros(3),
                                   "size": self.world_params.size}
-        name_indexes = OrderedDict()
+        name_indexes = dict()
         self.to_names(name_indexes)
         res = self.compile(self.random_state, world_params=self.world_params)
         if not res:

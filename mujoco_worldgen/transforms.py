@@ -1,4 +1,4 @@
-from collections import OrderedDict
+
 
 '''
     Transforms are functions which modify the world in-place.
@@ -7,7 +7,7 @@ from collections import OrderedDict
 
 def closure_transform(closure):
     '''
-        Call closure on every OrderedDict.
+        Call closure on every dict.
         This transform is usually not used directly, it is just called internally
         by other transforms.
     '''
@@ -18,7 +18,7 @@ def closure_transform(closure):
             if not isinstance(values, list):
                 values = [values]
             for value in values:
-                if isinstance(value, OrderedDict):
+                if isinstance(value, dict):
                     recursion(value)
     return recursion
 

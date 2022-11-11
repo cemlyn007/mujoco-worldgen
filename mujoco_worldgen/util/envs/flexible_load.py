@@ -1,6 +1,6 @@
 import json
 import os
-from collections import OrderedDict
+
 from glob import glob
 from os.path import join
 from runpy import run_path
@@ -112,7 +112,7 @@ def load_model_from_path_fix_paths(xml_path, zero_gravity=True):
 
     if zero_gravity:
         # zero gravity so that the object doesn't fall down
-        option = xml_dict.setdefault('option', OrderedDict())
+        option = xml_dict.setdefault('option', dict())
         option['@gravity'] = np.zeros(3)
     xml = unparse_dict(xml_dict)
     model = mujoco.MjModel.from_xml_string(xml)

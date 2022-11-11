@@ -1,5 +1,5 @@
 import os
-from collections import OrderedDict
+
 
 import numpy as np
 import stl
@@ -35,7 +35,7 @@ class ObjFromSTL(Obj):
                 max_[i] = max(max_[i], obj.max_[i])
                 min_[i] = min(min_[i], obj.min_[i])
             self.objs.append(obj)
-        self.placements = OrderedDict()
+        self.placements = dict()
         self.size = max_ - min_
         self.min_ = min_
 
@@ -43,16 +43,16 @@ class ObjFromSTL(Obj):
         body = get_body_xml_node(self.name, use_joints=True)
         for jnt in body["joint"]:
             jnt["@damping"] = 0.1
-        xml_dict = OrderedDict()
-        xml_dict['worldbody'] = OrderedDict(body=[body])
-        xml_dict["asset"] = OrderedDict(mesh=[])
+        xml_dict = dict()
+        xml_dict['worldbody'] = dict(body=[body])
+        xml_dict["asset"] = dict(mesh=[])
 
         self.body = body  # Save for use in generate_xinit()
         body['geom'] = []
         for idx, path in enumerate(self.local_path):
-            geom = OrderedDict()
+            geom = dict()
             name = self.name + "_" + str(idx)
-            mesh = OrderedDict([("@name", name),
+            mesh = dict([("@name", name),
                                 ("@file", path)])
             xml_dict["asset"]["mesh"].append(mesh)
             geom['@type'] = "mesh"
