@@ -1,6 +1,8 @@
-import numpy as np
 import hashlib
 from collections import OrderedDict
+
+import numpy as np
+
 from mujoco_worldgen.objs.obj import Obj
 from mujoco_worldgen.util.types import store_args
 

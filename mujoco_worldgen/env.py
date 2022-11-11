@@ -1,23 +1,375 @@
-import inspect
-import logging
+from xml.dom import minidom
+import copy
 import hashlib
-
+import inspect
+import io
+import logging
+import os
+from numbers import Number
+from typing import Optional, Callable
+import tempfile
 import gym
+import mujoco
 import numpy as np
 from gym.spaces import Box, Tuple, Dict
-from mujoco_py import MjSimState
 
-from mujoco_worldgen.util.types import enforce_is_callable
 from mujoco_worldgen.util.sim_funcs import (
     empty_get_info,
     flatten_get_obs,
     false_get_diverged,
     ctrl_set_action,
     zero_get_reward,
-    )
-
-
+)
+from mujoco_worldgen.util.types import enforce_is_callable
+import collections
 logger = logging.getLogger(__name__)
+
+
+class SimState(collections.namedtuple('SimStateBase', 'time qpos qvel act udd_state')):
+    """Represents a snapshot of the simulator's state.
+    This includes time, qpos, qvel, act, and udd_state.
+    https://github.com/openai/mujoco-py/blob/master/mujoco_py/Simstate.pyx
+    """
+    __slots__ = ()
+
+    # need to implement this because numpy doesn't support == on arrays
+    def __eq__(self, other):
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+
+        if set(self.udd_state.keys()) != set(other.udd_state.keys()):
+            return False
+
+        for k in self.udd_state.keys():
+            if isinstance(self.udd_state[k], Number) and self.udd_state[k] != other.udd_state[k]:
+                return False
+            elif not np.array_equal(self.udd_state[k], other.udd_state[k]):
+                return False
+
+        return (self.time == other.time and
+                np.array_equal(self.qpos, other.qpos) and
+                np.array_equal(self.qvel, other.qvel) and
+                np.array_equal(self.act, other.act))
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def flatten(self):
+        """ Flattens a state into a numpy array of numbers."""
+        if self.act is None:
+            act = np.empty(0)
+        else:
+            act = self.act
+        state_tuple = ([self.time], self.qpos, self.qvel, act,
+                       SimState._flatten_dict(self.udd_state))
+        return np.concatenate(state_tuple)
+
+    @staticmethod
+    def _flatten_dict(d):
+        a = []
+        for k in sorted(d.keys()):
+            v = d[k]
+            if isinstance(v, Number):
+                a.extend([v])
+            else:
+                a.extend(v.ravel())
+
+        return np.array(a)
+
+    @staticmethod
+    def from_flattened(array, sim):
+        idx_time = 0
+        idx_qpos = idx_time + 1
+        idx_qvel = idx_qpos + sim.model.nq
+        idx_act = idx_qvel + sim.model.nv
+        idx_udd = idx_act + sim.model.na
+
+        time = array[idx_time]
+        qpos = array[idx_qpos:idx_qpos + sim.model.nq]
+        qvel = array[idx_qvel:idx_qvel + sim.model.nv]
+        if sim.model.na == 0:
+            act = None
+        else:
+            act = array[idx_act:idx_act + sim.model.na]
+        flat_udd_state = array[idx_udd:]
+        udd_state = SimState._unflatten_dict(flat_udd_state, sim.udd_state)
+
+        return SimState(time, qpos, qvel, act, udd_state)
+
+    @staticmethod
+    def _unflatten_dict(a, schema_example):
+        d = {}
+        idx = 0
+        for k in sorted(schema_example.keys()):
+            schema_val = schema_example[k]
+            if isinstance(schema_val, Number):
+                val = a[idx]
+                idx += 1
+                d[k] = val
+            else:
+                assert isinstance(schema_val, np.ndarray)
+                val_array = a[idx:idx + schema_val.size]
+                idx += schema_val.size
+                val = np.array(val_array).reshape(schema_val.shape)
+                d[k] = val
+        return d
+
+
+class Sim:
+    """https://github.com/openai/mujoco-py/blob/master/mujoco_py/Sim.pyx"""
+
+    def __init__(self, model: mujoco.MjModel, data: Optional[mujoco.MjData] = None, nsubsteps: int = 1,
+                 udd_callback: Callable=None, substep_callback: Callable=None) -> None:
+        self.model = model
+        self.data = mujoco.MjData(self.model) if data is None else data
+        self.nsubsteps = nsubsteps
+        self.udd_state = None
+        self._udd_callback = udd_callback
+        self.substep_callback = substep_callback
+
+    def reset(self) -> None:
+        """
+        Resets the simulation data and clears buffers.
+        """
+        mujoco.mj_resetData(self.model, self.data)
+        self.udd_state = None
+        self.step_udd()
+
+    def forward(self) -> None:
+        """
+        Computes the forward kinematics. Calls ``mj_forward`` internally.
+        """
+        mujoco.mj_forward(self.model, self.data)
+
+    def set_constants(self):
+        """
+        Set constant fields of mjModel, corresponding to qpos0 configuration.
+        """
+        mujoco.mj_setConst(self.model, self.data)
+
+    def step(self, with_udd: bool=True) -> None:
+        if with_udd:
+            self.step_udd()
+        for _ in range(self.nsubsteps):
+            self.substep_callback()
+            mujoco.mj_step(self.model, self.data)
+
+    def render(self, width=None, height=None, *, camera_name=None, depth=False, mode='offscreen',
+               device_id=-1, segmentation=False) -> None:
+        """
+        Renders view from a camera and returns image as an `numpy.ndarray`.
+        Args:
+        - width (int): desired image width.
+        - height (int): desired image height.
+        - camera_name (str): name of camera in model. If None, the free
+            camera will be used.
+        - depth (bool): if True, also return depth buffer
+        - device (int): device to use for rendering (only for GPU-backed
+            rendering).
+        Returns:
+        - rgb (uint8 array): image buffer from camera
+        - depth (float array): depth buffer from camera (only returned
+            if depth=True)
+        """
+        raise NotImplementedError
+
+    def add_render_context(self, render_context):
+        raise NotImplementedError
+
+    @property
+    def udd_callback(self):
+        return self._udd_callback
+
+    def step_udd(self):
+        if self._udd_callback is None:
+            self.udd_state = {}
+        else:
+            schema_example = self.udd_state
+            self.udd_state = self._udd_callback(self)
+            # Check to make sure the udd_state has consistent keys and dimension across steps
+            if schema_example is not None:
+                keys = set(schema_example.keys()) | set(self.udd_state.keys())
+                for key in keys:
+                    assert key in schema_example, "Keys cannot be added to udd_state between steps."
+                    assert key in self.udd_state, "Keys cannot be dropped from udd_state between steps."
+                    if isinstance(schema_example[key], Number):
+                        assert isinstance(self.udd_state[key], Number), \
+                            "Every value in udd_state must be either a number or a numpy array"
+                    else:
+                        assert isinstance(self.udd_state[key], np.ndarray), \
+                            "Every value in udd_state must be either a number or a numpy array"
+                        assert self.udd_state[key].shape == schema_example[key].shape, \
+                            "Numpy array values in udd_state must keep the same dimension across steps."
+
+    @udd_callback.setter
+    def udd_callback(self, value):
+        self._udd_callback = value
+        self.udd_state = None
+        self.step_udd()
+
+    def get_state(self) -> SimState:
+        """ Returns a copy of the simulator state. """
+        qpos = np.copy(self.data.qpos)
+        qvel = np.copy(self.data.qvel)
+        if self.model.na == 0:
+            act = None
+        else:
+            act = np.copy(self.data.act)
+        udd_state = copy.deepcopy(self.udd_state)
+
+        return SimState(self.data.time, qpos, qvel, act, udd_state)
+
+    def set_state(self, value: SimState) -> None:
+        """
+        Sets the state from an SimState.
+        If the SimState was previously unflattened from a numpy array, consider
+        set_state_from_flattened, as the defensive copy is a substantial overhead
+        in an inner loop.
+        Args:
+        - value (SimState): the desired state.
+        """
+        self.data.time = value.time
+        self.data.qpos[:] = np.copy(value.qpos)
+        self.data.qvel[:] = np.copy(value.qvel)
+        if self.model.na != 0:
+            self.data.act[:] = np.copy(value.act)
+        self.udd_state = copy.deepcopy(value.udd_state)
+
+    def set_state_from_flattened(self, value):
+        """ This helper method sets the state from an array without requiring a defensive copy."""
+        state = SimState.from_flattened(value, self)
+
+        self.data.time = state.time
+        self.data.qpos[:] = state.qpos
+        self.data.qvel[:] = state.qvel
+        if self.model.na != 0:
+            self.data.act[:] = state.act
+        self.udd_state = state.udd_state
+
+    def save(self, file: io.IOBase, format='xml', keep_inertials=False):
+        """
+        Saves the simulator model and state to a file as either
+        a MuJoCo XML or MJB file. The current state is saved as
+        a keyframe in the model file. This is useful for debugging
+        using MuJoCo's `simulate` utility.
+        Note that this doesn't save the UDD-state which is
+        part of SimState, since that's not supported natively
+        by MuJoCo. If you want to save the model together with
+        the UDD-state, you should use the `get_xml` or `get_mjb`
+        methods on `MjModel` together with `Sim.get_state` and
+        save them with e.g. pickle.
+        Args:
+        - file (IO stream): stream to write model to.
+        - format: format to use (either 'xml' or 'mjb')
+        - keep_inertials (bool): if False, removes all <inertial>
+          properties derived automatically for geoms by MuJoco. Note
+          that this removes ones that were provided by the user
+          as well.
+        """
+        xml_str = self.model.get_xml()
+        dom = minidom.parseString(xml_str)
+
+        mujoco_node = dom.childNodes[0]
+        assert mujoco_node.tagName == 'mujoco'
+
+        keyframe_el = dom.createElement('keyframe')
+        key_el = dom.createElement('key')
+        keyframe_el.appendChild(key_el)
+        mujoco_node.appendChild(keyframe_el)
+
+        def str_array(arr):
+            return " ".join(map(str, arr))
+
+        key_el.setAttribute('time', str(self.data.time))
+        key_el.setAttribute('qpos', str_array(self.data.qpos))
+        key_el.setAttribute('qvel', str_array(self.data.qvel))
+        if self.data.act is not None:
+            key_el.setAttribute('act', str_array(self.data.act))
+
+        if not keep_inertials:
+            for element in dom.getElementsByTagName('inertial'):
+                element.parentNode.removeChild(element)
+
+        result_xml = "\n".join(stripped for line in dom.toprettyxml(indent=" " * 4).splitlines()
+                               if (stripped := line.strip()))
+
+        if format == 'xml':
+            file.write(result_xml)
+        elif format == 'mjb':
+            new_model = mujoco.MjModel.from_xml_string(result_xml)
+            file.write(new_model.get_mjb())
+        else:
+            raise ValueError("Unsupported format. Valid ones are 'xml' and 'mjb'")
+
+    def ray(self, pnt, vec, include_static_geoms=True, exclude_body=-1, group_filter=None):
+        """
+        Cast a ray into the scene, and return the first valid geom it intersects.
+            pnt - origin point of the ray in world coordinates (X Y Z)
+            vec - direction of the ray in world coordinates (X Y Z)
+            include_static_geoms - if False, we exclude geoms that are children of worldbody.
+            exclude_body - if this is a body ID, we exclude all children geoms of this body.
+            group_filter - a vector of booleans of length const.NGROUP
+                           which specifies what geom groups (stored in model.geom_group)
+                           to enable or disable.  If none, all groups are used
+        Returns (distance, geomid) where
+            distance - distance along ray until first collision with geom
+            geomid - id of the geom the ray collided with
+        If no collision was found in the scene, return (-1, None)
+        NOTE: sometimes self.forward() needs to be called before self.ray().
+        See self.ray_fast_group() and self.ray_fast_nogroup() for versions of this call
+        with more stringent type requirements.
+        """
+        if group_filter is None:
+            return self.ray_fast_nogroup(
+                np.asarray(pnt, dtype=np.float64),
+                np.asarray(vec, dtype=np.float64),
+                1 if include_static_geoms else 0,
+                exclude_body)
+        else:
+            return self.ray_fast_group(
+                np.asarray(pnt, dtype=np.float64),
+                np.asarray(vec, dtype=np.float64),
+                np.asarray(group_filter, dtype=np.uint8),
+                1 if include_static_geoms else 0,
+                exclude_body)
+
+    def ray_fast_group(self,
+                       pnt: np.ndarray,
+                       vec: np.ndarray,
+                       geomgroup: np.ndarray,
+                       flg_static: int = 1,
+                       bodyexclude: int = -1) -> tuple[float, Optional[int]]:
+        """
+        Faster version of sim.ray(), which avoids extra copies,
+        but needs to be given all the correct type arrays.
+        See self.ray() for explanation of arguments
+        """
+        geomid = np.empty((1, 1), dtype=np.int32)
+        distance = mujoco.mj_ray(self.model.ptr, self.data.ptr, pnt, vec, geomgroup, flg_static,
+                                 bodyexclude, geomid)
+        # TODO: Probably wrong.
+        assert distance == -1 and geomid is not None
+        collision_geom = geomid if geomid != -1 else None
+        return (distance, collision_geom)
+
+    def ray_fast_nogroup(self,
+                         pnt: np.ndarray,
+                         vec: np.ndarray,
+                         flg_static: int = 1,
+                         bodyexclude: int = -1) -> tuple[float, Optional[int]]:
+        """
+        Faster version of sim.ray(), which avoids extra copies,
+        but needs to be given all the correct type arrays.
+        This version hardcodes the geomgroup to NULL.
+        See self.ray() for explanation of arguments
+        """
+        geomid = np.empty((1, 1), dtype=np.int32)
+        distance = mujoco.mj_ray(self.model, self.data, pnt, vec, None, flg_static, bodyexclude,
+                                 geomid)
+        # TODO: Probably wrong.
+        collision_geom = geomid if geomid != -1 else None
+        assert distance == -1
+        return (distance, collision_geom)
 
 
 class Env(gym.Env):
@@ -41,16 +393,16 @@ class Env(gym.Env):
         research.
 
         Args:
-        - get_sim (callable): a callable that returns an MjSim.
-        - get_obs (callable): callable with an MjSim object as the sole
+        - get_sim (callable): a callable that returns a Sim.
+        - get_obs (callable): callable with a Sim object as the sole
             argument and should return observations.
-        - set_action (callable): callable which takes an MjSim object and
+        - set_action (callable): callable which takes a Sim object and
             updates its data and buffer directly.
-        - get_reward (callable): callable which takes an MjSim object and
+        - get_reward (callable): callable which takes a Sim object and
             returns a scalar reward.
-        - get_info (callable): callable which takes an MjSim object and
+        - get_info (callable): callable which takes a Sim object and
             returns info (dictionary).
-        - get_diverged (callable): callable which takes an MjSim object
+        - get_diverged (callable): callable which takes a Sim object
             and returns a (bool, float) tuple. First value is True if
             simulator diverged and second value is the reward at divergence.
         - action_space: a space of allowed actions or a two-tuple of a ranges
@@ -69,26 +421,26 @@ class Env(gym.Env):
             raise TypeError('horizon must be an int')
 
         self.get_sim = enforce_is_callable(get_sim, (
-            'get_sim should be callable and should return an MjSim object'))
+            'get_sim should be callable and should return a Sim object'))
         self.get_obs = enforce_is_callable(get_obs, (
-            'get_obs should be callable with an MjSim object as the sole '
+            'get_obs should be callable with a Sim object as the sole '
             'argument and should return observations'))
         self.set_action = enforce_is_callable(set_action, (
-            'set_action should be a callable which takes an MjSim object and '
+            'set_action should be a callable which takes a Sim object and '
             'updates its data and buffer directly'))
         self.get_reward = enforce_is_callable(get_reward, (
-            'get_reward should be a callable which takes an MjSim object and '
+            'get_reward should be a callable which takes a Sim object and '
             'returns a scalar reward'))
         self.get_info = enforce_is_callable(get_info, (
-            'get_info should be a callable which takes an MjSim object and '
+            'get_info should be a callable which takes a Sim object and '
             'returns a dictionary'))
         self.get_diverged = enforce_is_callable(get_diverged, (
-            'get_diverged should be a callable which takes an MjSim object '
+            'get_diverged should be a callable which takes a Sim object '
             'and returns a (bool, float) tuple. First value is whether '
             'simulator is diverged (or done) and second value is the reward at '
             'that time.'))
 
-        self.sim = None
+        self.sim: Optional[Sim] = None
         self.horizon = horizon
         self.t = None
         self.deterministic_mode = deterministic_mode
@@ -140,19 +492,17 @@ class Env(gym.Env):
             the state of objects which don't have joints.
 
         Args:
-        - state (MjSimState): desired state.
+        - state (SimState): desired state.
         - call_forward (bool): if True, forward simulation after setting
             state.
         """
-        if not isinstance(state, MjSimState):
-            raise TypeError("state must be an MjSimState")
         if self.sim is None:
             raise EmptyEnvException(
                 "You must call reset() or reset_to_state() before setting the "
                 "state the first time")
 
         # Call forward to write out values in the MuJoCo data.
-        # Note: if udd_callback is set on the MjSim instance, then the
+        # Note: if udd_callback is set on the Sim instance, then the
         # user will need to call forward() manually before calling step.
         self.sim.set_state(state)
         if call_forward:
@@ -163,7 +513,7 @@ class Env(gym.Env):
         Returns a copy of the current environment state.
 
         Returns:
-        - state (MjSimState): state of the environment's MjSim object.
+        - state (SimState): state of the environment's Sim object.
         """
         if self.sim is None:
             raise EmptyEnvException(
@@ -176,24 +526,34 @@ class Env(gym.Env):
         :return: full state of the simulator serialized as XML (won't contain
                  meshes, textures, and data information).
         '''
-        return self.sim.model.get_xml()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = os.path.join(tmpdir, 'model.xml')
+            mujoco.mj_saveLastXML(filepath, self.sim.model)
+            with open(filepath) as f:
+                xml = f.read()
+        return xml
 
     def get_mjb(self):
         '''
         :return: full state of the simulator serialized as mjb.
         '''
-        return self.sim.model.get_mjb()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with open(os.path.join(tmpdir, 'model.mjb'), 'wr') as f:
+                mujoco.mj_saveModel(self.sim.model, f)
+                f.seek(0, io.SEEK_SET)
+                mjb = f.read()
+        return mjb
 
     def reset_to_state(self, state, call_forward=True):
         """
         Reset to given state.
 
         Args:
-        - state (MjSimState): desired state.
+        - state (SimState): desired state.
         """
-        if not isinstance(state, MjSimState):
+        if not isinstance(state, SimState):
             raise TypeError(
-                "You must reset to an explicit state (MjSimState).")
+                "You must reset to an explicit state (SimState).")
 
         if self.sim is None:
             if self._current_seed is None:
@@ -391,23 +751,7 @@ class Env(gym.Env):
         return self.get_obs(self.sim)
 
     def render(self, mode='human', close=False):
-        if close:
-            # TODO: actually close the inspection viewer
-            return
-        assert self.sim is not None, \
-            "Please reset environment before render()."
-        if mode == 'human':
-            # Use a nicely-interactive version of the mujoco viewer
-            if self.viewer is None:
-                # Inline import since this is only relevant on platforms
-                # which have GLFW support.
-                from mujoco_py.mjviewer import MjViewer  # noqa
-                self.viewer = MjViewer(self.sim)
-            self.viewer.render()
-        elif mode == 'rgb_array':
-            return self.sim.render(500, 500)
-        else:
-            raise ValueError("Unsupported mode %s" % mode)
+        raise ValueError("Unsupported mode %s" % mode)
 
 
 class EmptyEnvException(Exception):

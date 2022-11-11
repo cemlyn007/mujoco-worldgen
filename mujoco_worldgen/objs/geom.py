@@ -1,5 +1,6 @@
-import numpy as np
 from collections import OrderedDict
+
+import numpy as np
 
 from mujoco_worldgen.objs.obj import Obj
 from mujoco_worldgen.util.obj_util import establish_size, get_body_xml_node

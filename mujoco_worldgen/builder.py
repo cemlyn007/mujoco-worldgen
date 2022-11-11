@@ -3,11 +3,12 @@ from collections import OrderedDict
 from copy import deepcopy as copy
 
 import numpy as np
-from mujoco_py import const, load_model_from_xml, MjSim
+import mujoco
 
-from mujoco_worldgen.util.path import worldgen_path
+from mujoco_worldgen import env
 from mujoco_worldgen.objs.obj import Obj
 from mujoco_worldgen.parser import unparse_dict, update_mujoco_dict
+from mujoco_worldgen.util.path import worldgen_path
 
 logger = logging.getLogger(__name__)
 
@@ -76,15 +77,15 @@ class WorldBuilder(Obj):
         udd_callbacks = self.to_udd_callback()
         xml = unparse_dict(xml_dict)
 
-        model = load_model_from_xml(xml)
-        sim = MjSim(model, nsubsteps=self.world_params.num_substeps)
+        model = mujoco.MjModel.from_xml_string(xml)
+        sim = env.Sim(env.SimState(model, None), nsubsteps=self.world_params.num_substeps)
         for name, value in xinit_dict.items():
             sim.data.set_joint_qpos(name, value)
         # Places mocap where related bodies are.
-        if sim.model.nmocap > 0 and sim.model.eq_data is not None:
-            for i in range(sim.model.eq_data.shape[0]):
-                if sim.model.eq_type[i] == const.EQ_WELD:
-                    sim.model.eq_data[i, :] = np.array(
+        if model.nmocap > 0 and model.eq_data is not None:
+            for i in range(model.eq_data.shape[0]):
+                if model.eq_type[i] == mujoco.mjtEq.mjEQ_WELD:
+                    model.eq_data[i, :] = np.array(
                         [0., 0., 0., 1., 0., 0., 0.])
         udd_callbacks = (udd_callbacks or [])
         if udd_callbacks is not None and len(udd_callbacks) > 0:

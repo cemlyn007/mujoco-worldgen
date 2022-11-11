@@ -1,5 +1,5 @@
-from mujoco_worldgen.util.envs.flexible_load import load_env
 from mujoco_worldgen.util.envs.env_viewer import EnvViewer
+from mujoco_worldgen.util.envs.flexible_load import load_env
 
 
 def examine_env(env_name, env_kwargs, core_dir, envs_dir, xmls_dir='xmls',

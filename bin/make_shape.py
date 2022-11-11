@@ -3,12 +3,14 @@
 # This file is expected to be edited and ran, or used as a module
 # It's a bit of a hack, but it makes objects that work!
 import os
-import numpy as np
 from collections import OrderedDict
 from itertools import chain, combinations, product
+
+import numpy as np
 import xmltodict
 from pyhull.convex_hull import ConvexHull
 from stl.mesh import Mesh
+
 from mujoco_worldgen.util.path import worldgen_path
 
 # Basic (half) unit length we normalize to

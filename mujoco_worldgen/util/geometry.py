@@ -1,7 +1,7 @@
-import numpy as np
-from mujoco_py import functions
-from ctypes import c_int, addressof
 from math import sqrt
+
+import numpy as np
+import mujoco
 
 
 def raycast(sim, geom1_id=None, geom2_id=None, pt1=None, pt2=None, geom_group=None):
@@ -36,14 +36,15 @@ def raycast(sim, geom1_id=None, geom2_id=None, pt1=None, pt2=None, geom_group=No
         geom_group = np.array([1, 1, 1, 1, 1]).astype(np.uint8)  # This is the default geom group
 
     # Setup int array
-    c_arr = (c_int*1)(0)
-    dist = functions.mj_ray(sim.model,
-                            sim.data,
-                            pt1,
-                            ray_direction,
-                            geom_group,
-                            np.array([[0]]).astype(np.uint8),  # flg_static. TODO idk what this is
-                            body1,  # Bodyid to exclude
-                            addressof(c_arr))
-    collision_geom = c_arr[0] if c_arr[0] != -1 else None
+    geomid = np.empty((1, 1), dtype=np.int32)
+    flg_static = np.zeros((1, 1), dtype=np.uint8)
+    dist = mujoco.mj_ray(sim.model,
+                         sim.data,
+                         pt1,
+                         ray_direction,
+                         geom_group,
+                         flg_static,  # flg_static. TODO idk what this is
+                         body1,  # Bodyid to exclude
+                         geomid)
+    collision_geom = geomid if geomid != -1 else None
     return dist, collision_geom

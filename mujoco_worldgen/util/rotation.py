@@ -3,8 +3,9 @@
 # eventually some of these may be upstreamed, but credit to transforms3d
 # authors for implementing the many of the formulations we use here.
 
-import numpy as np
 import itertools
+
+import numpy as np
 
 '''
 Rotations

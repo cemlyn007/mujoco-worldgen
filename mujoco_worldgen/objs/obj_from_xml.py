@@ -9,11 +9,11 @@ from collections import OrderedDict
 
 import numpy as np
 
-from mujoco_worldgen.util.types import store_args
-from mujoco_worldgen.util.path import worldgen_path
+from mujoco_worldgen.objs.obj import Obj
 from mujoco_worldgen.parser import parse_file
 from mujoco_worldgen.util.obj_util import get_name_index, recursive_rename
-from mujoco_worldgen.objs.obj import Obj
+from mujoco_worldgen.util.path import worldgen_path
+from mujoco_worldgen.util.types import store_args
 
 
 class ObjFromXML(Obj):
@@ -87,6 +87,7 @@ class ObjFromXML(Obj):
         for i, slide_axis in enumerate(np.eye(3)):
             found = False
             for joint in body['joint']:
+                # TODO: The error is caused by expecting that the type is OrderedDict but our change has made it dict ;D
                 if not isinstance(joint, OrderedDict):
                     continue
                 if joint.get('@type') != 'slide':

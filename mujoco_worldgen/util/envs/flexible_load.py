@@ -1,18 +1,19 @@
-import os
-import numpy as np
 import json
-import _jsonnet
-from os.path import join
+import os
 from collections import OrderedDict
 from glob import glob
-
-from mujoco_py import load_model_from_xml, load_model_from_mjb, MjSim
+from os.path import join
 from runpy import run_path
 
+import _jsonnet
+import numpy as np
+import mujoco
+from mujoco_worldgen.env import Sim
+
 from mujoco_worldgen import Env
+from mujoco_worldgen.parser import parse_file, unparse_dict
 from mujoco_worldgen.util.path import worldgen_path
 from mujoco_worldgen.util.types import extract_matching_arguments
-from mujoco_worldgen.parser import parse_file, unparse_dict
 
 
 def get_function(fn_data):
@@ -57,7 +58,7 @@ def load_env(pattern, core_dir=worldgen_path(), envs_dir='examples', xmls_dir='x
 
         def get_sim(seed):
             model = load_model_from_path_fix_paths(xml_path=pattern)
-            return MjSim(model)
+            return Sim(model)
         env = Env(get_sim=get_sim)
     # Loads environment based on mjb.
     elif pattern.endswith(".mjb"):
@@ -67,8 +68,8 @@ def load_env(pattern, core_dir=worldgen_path(), envs_dir='examples', xmls_dir='x
                   "accept any extra input arguments")
 
         def get_sim(seed):
-            model = load_model_from_mjb(pattern)
-            return MjSim(model)
+            model = mujoco.MjModel.from_binary_path(pattern)
+            return Sim(model)
         env = Env(get_sim=get_sim)
     # Loads environment from a python file
     elif pattern.endswith("py") and os.path.exists(pattern):
@@ -114,5 +115,5 @@ def load_model_from_path_fix_paths(xml_path, zero_gravity=True):
         option = xml_dict.setdefault('option', OrderedDict())
         option['@gravity'] = np.zeros(3)
     xml = unparse_dict(xml_dict)
-    model = load_model_from_xml(xml)
+    model = mujoco.MjModel.from_xml_string(xml)
     return model

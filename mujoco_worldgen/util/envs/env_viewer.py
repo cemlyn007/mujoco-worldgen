@@ -1,12 +1,12 @@
-import numpy as np
 import time
-from mujoco_py import const, MjViewer, ignore_mujoco_warnings
+
 import glfw
+import numpy as np
 from gym.spaces import Box
 from gym.spaces import MultiDiscrete
+from mujoco_worldgen.util.envs import mjviewer
 
-
-class EnvViewer(MjViewer):
+class EnvViewer(mjviewer.MjViewer):
 
     def __init__(self, env):
         self.env = env

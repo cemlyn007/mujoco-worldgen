@@ -1,5 +1,5 @@
-import numpy as np
 import gym
+import numpy as np
 from gym.spaces import Box, Dict
 
 from mujoco_worldgen import Floor, WorldBuilder, Geom, ObjFromXML, WorldParams, Env

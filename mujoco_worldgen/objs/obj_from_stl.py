@@ -1,12 +1,13 @@
+import os
 from collections import OrderedDict
 
+import numpy as np
+import stl
+
 from mujoco_worldgen.objs.obj import Obj
-from mujoco_worldgen.util.types import store_args
 from mujoco_worldgen.util.obj_util import get_body_xml_node
 from mujoco_worldgen.util.path import worldgen_path
-import stl
-import os
-import numpy as np
+from mujoco_worldgen.util.types import store_args
 
 
 class ObjFromSTL(Obj):

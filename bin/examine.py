@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-import click
 import logging
 
+import click
+
 from mujoco_worldgen.util.envs import EnvViewer, examine_env
-from mujoco_worldgen.util.path import worldgen_path
 from mujoco_worldgen.util.parse_arguments import parse_arguments
+from mujoco_worldgen.util.path import worldgen_path
 
 logger = logging.getLogger(__name__)
 

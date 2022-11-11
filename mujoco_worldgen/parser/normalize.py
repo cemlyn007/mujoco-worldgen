@@ -1,10 +1,12 @@
 from collections import OrderedDict
-from mujoco_worldgen.util.types import accepts, returns
-from mujoco_worldgen.parser.const import list_types, float_arg_types
-import numpy as np
-from decimal import Decimal, getcontext
 import ast
 import re
+from decimal import Decimal, getcontext
+
+import numpy as np
+
+from mujoco_worldgen.parser.const import list_types, float_arg_types
+from mujoco_worldgen.util.types import accepts, returns
 
 getcontext().prec = 10
 
