@@ -37,7 +37,7 @@ def parse_file(xml_path, enforce_validation=True):
     with open(xml_path) as f:
         xml_string = f.read()
 
-    xml_doc_dict = collections.dict(list(xmltodict.parse(xml_string.strip()).items()))
+    xml_doc_dict = xmltodict.parse(xml_string.strip())
     assert 'mujoco' in xml_doc_dict, "XML must contain <mujoco> node"
     xml_dict = xml_doc_dict['mujoco']
     assert isinstance(xml_dict, dict), \

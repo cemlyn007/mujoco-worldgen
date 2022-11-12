@@ -122,11 +122,12 @@ class FoodHealthWrapper(gym.Wrapper):
         return obs
 
     def step(self, action):
-        obs, rew, done, info = self.env.step(action)
-        assert np.all(self.unwrapped.food_healths >= 0), \
+        obs, rew, terminated, truncated, info = self.env.step(action)
+        assert np.all(self.unwrapped.food_healths >= 0), (
             f"There is a food health below 0: {self.unwrapped.food_healths}"
+        )
         obs = self.observation(obs)
-        return obs, rew, done, info
+        return obs, rew, terminated, truncated, info
 
 
 class ProcessEatFood(gym.Wrapper):
@@ -146,7 +147,7 @@ class ProcessEatFood(gym.Wrapper):
         return obs
 
     def step(self, action):
-        obs, rew, done, info = self.env.step(action)
+        obs, rew, terminated, truncated, info = self.env.step(action)
         obs = self.observation(obs)
 
         # Eat food that is close enough
@@ -163,7 +164,7 @@ class ProcessEatFood(gym.Wrapper):
         self.unwrapped.sim.model.site_size[self.unwrapped.food_ids] = size
 
         rew += np.sum(eat)
-        return obs, rew, done, info
+        return obs, rew, terminated, truncated, info
 
 
 def make_env(n_food=3, horizon=50, floorsize=4.):

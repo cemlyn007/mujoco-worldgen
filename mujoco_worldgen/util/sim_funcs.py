@@ -2,7 +2,7 @@ import itertools
 import logging
 
 import numpy as np
-
+from mujoco_worldgen import env
 logger = logging.getLogger(__name__)
 
 # #######################################
@@ -107,26 +107,26 @@ def change_geom_alpha(model, body_name_prefix, new_alpha):
                 model.geom_rgba[geom_id, 3] = new_alpha
 
 
-def joint_qpos_idxs(sim, joint_name):
+def joint_qpos_idxs(sim, joint_name: str):
     ''' Gets indexes for the specified joint's qpos values'''
-    addr = sim.model.get_joint_qpos_addr(joint_name)
+    addr = sim.get_joint_qpos_addr(joint_name)
     if isinstance(addr, tuple):
         return list(range(addr[0], addr[1]))
     else:
         return [addr]
 
 
-def qpos_idxs_from_joint_prefix(sim, prefix):
+def qpos_idxs_from_joint_prefix(sim, prefix: str):
     ''' Gets indexes for the qpos values of all joints matching the prefix'''
     qpos_idxs_list = [joint_qpos_idxs(sim, name)
-                      for name in sim.model.joint_names
+                      for name in sim.joint_names
                       if name.startswith(prefix)]
     return list(itertools.chain.from_iterable(qpos_idxs_list))
 
 
 def joint_qvel_idxs(sim, joint_name):
     ''' Gets indexes for the specified joint's qvel values'''
-    addr = sim.model.get_joint_qvel_addr(joint_name)
+    addr = sim.get_joint_qvel_addr(joint_name)
     if isinstance(addr, tuple):
         return list(range(addr[0], addr[1]))
     else:
@@ -136,7 +136,7 @@ def joint_qvel_idxs(sim, joint_name):
 def qvel_idxs_from_joint_prefix(sim, prefix):
     ''' Gets indexes for the qvel values of all joints matching the prefix'''
     qvel_idxs_list = [joint_qvel_idxs(sim, name)
-                      for name in sim.model.joint_names
+                      for name in sim.joint_names
                       if name.startswith(prefix)]
     return list(itertools.chain.from_iterable(qvel_idxs_list))
 

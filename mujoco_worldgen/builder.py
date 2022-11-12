@@ -1,10 +1,9 @@
+import functools
 import logging
-
 from copy import deepcopy as copy
 
-import numpy as np
 import mujoco
-
+import numpy as np
 from mujoco_worldgen import env
 from mujoco_worldgen.objs.obj import Obj
 from mujoco_worldgen.parser import unparse_dict, update_mujoco_dict
@@ -39,7 +38,7 @@ class WorldBuilder(Obj):
         option = dict()
         option["flag"] = dict([("@warmstart", "enable")])
         return dict([('compiler', compiler),
-                            ('option', option)])
+                     ('option', option)])
 
     def generate_xinit(self):
         return {}  # Builder has no xinit
@@ -78,9 +77,16 @@ class WorldBuilder(Obj):
         xml = unparse_dict(xml_dict)
 
         model = mujoco.MjModel.from_xml_string(xml)
-        sim = env.Sim(env.SimState(model, None), nsubsteps=self.world_params.num_substeps)
+        sim = env.Sim(model, nsubsteps=self.world_params.num_substeps)
         for name, value in xinit_dict.items():
-            sim.data.set_joint_qpos(name, value)
+            addr = sim.get_joint_qpos_addr(name)
+            if isinstance(addr, (int, np.int32, np.int64)):
+                sim.data.qpos[addr] = value
+            else:
+                start_i, end_i = addr
+                value = np.array(value)
+                assert value.shape == (end_i - start_i,), ("Value has incorrect shape %s: %s" % (name, value))
+                sim.data.qpos[start_i:end_i] = value
         # Places mocap where related bodies are.
         if model.nmocap > 0 and model.eq_data is not None:
             for i in range(model.eq_data.shape[0]):
@@ -94,6 +100,7 @@ class WorldBuilder(Obj):
                 for udd_callback in udd_callbacks:
                     ret.update(udd_callback(sim))
                 return ret
+
             sim.udd_callback = merged_udd_callback
         return sim
 
@@ -101,4 +108,4 @@ class WorldBuilder(Obj):
 class FullVirtualWorldException(Exception):
     def __init__(self, msg=''):
         Exception.__init__(self, "Virtual world is full of objects. " +
-                                 "Cannot allocate more of them. " + msg)
+                           "Cannot allocate more of them. " + msg)

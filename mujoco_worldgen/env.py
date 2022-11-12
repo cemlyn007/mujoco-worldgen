@@ -1,3 +1,4 @@
+import threading
 from xml.dom import minidom
 import copy
 import hashlib
@@ -6,7 +7,7 @@ import io
 import logging
 import os
 from numbers import Number
-from typing import Optional, Callable
+from typing import Optional, Callable, Union
 import tempfile
 import gym
 import mujoco
@@ -24,6 +25,8 @@ from mujoco_worldgen.util.types import enforce_is_callable
 import collections
 logger = logging.getLogger(__name__)
 
+
+_MjSim_render_lock = threading.Lock()
 
 class SimState(collections.namedtuple('SimStateBase', 'time qpos qvel act udd_state')):
     """Represents a snapshot of the simulator's state.
@@ -119,13 +122,68 @@ class Sim:
     """https://github.com/openai/mujoco-py/blob/master/mujoco_py/Sim.pyx"""
 
     def __init__(self, model: mujoco.MjModel, data: Optional[mujoco.MjData] = None, nsubsteps: int = 1,
-                 udd_callback: Callable=None, substep_callback: Callable=None) -> None:
+                 udd_callback: Callable=None, substep_callback: Callable=None, render_callback: Callable=None) -> None:
         self.model = model
         self.data = mujoco.MjData(self.model) if data is None else data
         self.nsubsteps = nsubsteps
         self.udd_state = None
         self._udd_callback = udd_callback
-        self.substep_callback = substep_callback
+        if substep_callback is None:
+            self.substep_callback = lambda: None
+        else:
+            self.substep_callback = substep_callback
+
+        self.render_contexts = []
+        self._render_context_offscreen = None
+        self._render_context_window = None
+        self.render_callback = render_callback
+        self.extras = {}
+
+        self._body_names, self._body_name2id, self._body_id2name = self._extract_mj_names(
+            self.model.name_bodyadr, self.model.nbody, mujoco.mjtObj.mjOBJ_BODY
+        )
+        self._joint_names, self._joint_name2id, self._joint_id2name = self._extract_mj_names(
+            self.model.name_jntadr, self.model.njnt, mujoco.mjtObj.mjOBJ_JOINT
+        )
+        self._geom_names, self._geom_name2id, self._geom_id2name = self._extract_mj_names(
+            self.model.name_geomadr, self.model.ngeom, mujoco.mjtObj.mjOBJ_GEOM
+        )
+
+    @property
+    def body_names(self) -> tuple[str]:
+        return self._body_names
+
+    @property
+    def body_name2id(self) -> dict[str, int]:
+        return self._body_name2id
+
+    @property
+    def body_id2name(self) -> dict[int, str]:
+        return self._body_id2name
+
+    @property
+    def joint_names(self) -> tuple[str]:
+        return self._joint_names
+
+    @property
+    def joint_name2id(self) -> dict[str, int]:
+        return self._joint_name2id
+
+    @property
+    def joint_id2name(self) -> dict[int, str]:
+        return self._joint_id2name
+
+    @property
+    def geom_names(self) -> tuple[str]:
+        return self._geom_names
+
+    @property
+    def geom_name2id(self) -> dict[str, int]:
+        return self._geom_name2id
+
+    @property
+    def geom_id2name(self) -> dict[int, str]:
+        return self._geom_id2name
 
     def reset(self) -> None:
         """
@@ -171,10 +229,42 @@ class Sim:
         - depth (float array): depth buffer from camera (only returned
             if depth=True)
         """
-        raise NotImplementedError
+        if camera_name is None:
+            camera_id = None
+        else:
+            camera_id = self.model.camera_name2id(camera_name)
+
+        if mode == 'offscreen':
+            with _MjSim_render_lock:
+                if self._render_context_offscreen is None:
+                    from mujoco_worldgen.util.envs import mjviewer
+                    render_context = mjviewer.MjRenderContextOffscreen(self, device_id=device_id)
+                else:
+                    render_context = self._render_context_offscreen
+
+                render_context.render(width=width, height=height,
+                                      camera_id=camera_id,
+                                      segmentation=segmentation)
+                return render_context.read_pixels(width, height,
+                                                  depth=depth,
+                                                  segmentation=segmentation)
+        elif mode == 'window':
+            if self._render_context_window is None:
+                from mujoco_worldgen.util.envs import mjviewer
+                render_context = mjviewer.MjViewer(self)
+            else:
+                render_context = self._render_context_window
+
+            render_context.render()
+        else:
+            raise ValueError("Mode must be either 'window' or 'offscreen'.")
 
     def add_render_context(self, render_context):
-        raise NotImplementedError
+        self.render_contexts.append(render_context)
+        if render_context.offscreen and self._render_context_offscreen is None:
+            self._render_context_offscreen = render_context
+        elif not render_context.offscreen and self._render_context_window is None:
+            self._render_context_window = render_context
 
     @property
     def udd_callback(self):
@@ -347,7 +437,7 @@ class Sim:
         geomid = np.empty((1, 1), dtype=np.int32)
         distance = mujoco.mj_ray(self.model.ptr, self.data.ptr, pnt, vec, geomgroup, flg_static,
                                  bodyexclude, geomid)
-        # TODO: Probably wrong.
+
         assert distance == -1 and geomid is not None
         collision_geom = geomid if geomid != -1 else None
         return (distance, collision_geom)
@@ -370,6 +460,74 @@ class Sim:
         collision_geom = geomid if geomid != -1 else None
         assert distance == -1
         return (distance, collision_geom)
+
+    def get_joint_qpos_addr(self, name: str) -> Union[int, tuple]:
+        '''
+        Returns the qpos address for given joint.
+        Returns:
+        - address (int, tuple): returns int address if 1-dim joint, otherwise
+            returns the a (start, end) tuple for pos[start:end] access.
+        '''
+        joint_id = self.joint_name2id[name]
+        joint_type = self.model.jnt_type[joint_id]
+        joint_addr = self.model.jnt_qposadr[joint_id]
+
+        if joint_type == mujoco.mjtJoint.mjJNT_FREE:
+            ndim = 7
+        elif joint_type == mujoco.mjtJoint.mjJNT_BALL:
+            ndim = 4
+        else:
+            assert joint_type in (mujoco.mjtJoint.mjJNT_HINGE,
+                                  mujoco.mjtJoint.mjJNT_SLIDE)
+            ndim = 1
+
+        if ndim == 1:
+            return joint_addr
+        else:
+            return (joint_addr, joint_addr + ndim)
+
+    def get_joint_qvel_addr(self, name: str) -> Union[int, tuple]:
+        '''
+        Returns the qvel address for given joint.
+        Returns:
+        - address (int, tuple): returns int address if 1-dim joint, otherwise
+            returns the a (start, end) tuple for vel[start:end] access.
+        '''
+        joint_id = self.joint_name2id[name]
+        joint_type = self.model.jnt_type[joint_id]
+        joint_addr = self.model.jnt_qposadr[joint_id]
+        if joint_type == mujoco.mjtJoint.mjJNT_FREE:
+            ndim = 6
+        elif joint_type == mujoco.mjtJoint.mjJNT_BALL:
+            ndim = 3
+        else:
+            assert joint_type in (mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE)
+            ndim = 1
+
+        if ndim == 1:
+            return joint_addr
+        else:
+            return (joint_addr, joint_addr + ndim)
+
+    def _extract_mj_names(self, name_adr: list[int],
+                          n: int, obj_type: mujoco.mjtObj) -> tuple[tuple, dict, dict]:
+        # objects don't need to be named in the XML, so name might be None
+        if len(name_adr) != n:
+            raise ValueError
+        # else...
+        id2name = {i: None for i in range(n)}
+        name2id = {}
+        for i in range(n):
+            name = self.model.names[name_adr[i]:].split(b'\x00')[0]
+            decoded_name = name.decode()
+            if decoded_name:
+                obj_id = mujoco.mj_name2id(self.model, obj_type, decoded_name)
+                assert 0 <= obj_id < n and id2name[obj_id] is None
+                name2id[decoded_name] = obj_id
+                id2name[obj_id] = decoded_name
+
+        # sort names by increasing id to keep order deterministic
+        return tuple(id2name[id_] for id_ in sorted(name2id.values())), name2id, id2name
 
 
 class Env(gym.Env):
@@ -663,7 +821,7 @@ class Env(gym.Env):
                 "observation_space.")
         return self._observation_space
 
-    def reset(self, force_seed=None):
+    def reset(self, force_seed: Optional[int]=None) -> tuple[dict, dict]:
         self._update_seed(force_seed=force_seed)
 
         # get sim with current seed
@@ -673,9 +831,9 @@ class Env(gym.Env):
         self.sim.forward()
         self.t = 0
         self.sim.data.time = 0.0
-        return self._reset_sim_and_spaces()
+        return self._reset_sim_and_spaces(), {}
 
-    def seed(self, seed=None):
+    def seed(self, seed: Optional[int]=None):
         """
         Use `env.seed(some_seed)` to set the seed that'll be used in
         `env.reset()`. More specifically, this is the seed that will
@@ -709,7 +867,8 @@ class Env(gym.Env):
         action = np.maximum(action, self.action_space.low)
         assert self.action_space.contains(action), (
             'Action should be in action_space:\nSPACE=%s\nACTION=%s' %
-            (self.action_space, action))
+            (self.action_space, action)
+        )
         self.set_action(self.sim, action)
         self.sim.step()
         # Need to call forward() so that sites etc are updated,
@@ -731,19 +890,19 @@ class Env(gym.Env):
             raise TypeError(
                 "The second return value of get_diverged must be float")
 
+        terminated = False
+        truncated = False
         if diverged:
-            done = True
+            terminated = True
             if divergence_reward is not None:
                 reward = divergence_reward
         elif self.horizon is not None:
-            done = (self.t >= self.horizon)
-        else:
-            done = False
+            truncated = (self.t >= self.horizon)
 
         info = self.get_info(self.sim)
         info["diverged"] = divergence_reward
         # Return value as required by Gym
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
     def observe(self):
         """ Gets a new observation from the environment. """

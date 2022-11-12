@@ -31,9 +31,9 @@ def raycast(sim, geom1_id=None, geom2_id=None, pt1=None, pt2=None, geom_group=No
     ray_direction /= sqrt(ray_direction[0] ** 2 + ray_direction[1] ** 2 + ray_direction[2] ** 2)
 
     if geom_group is not None:
-        geom_group = np.array(geom_group).astype(np.uint8)
+        geom_group = np.array(geom_group, dtype=np.uint8)
     else:
-        geom_group = np.array([1, 1, 1, 1, 1]).astype(np.uint8)  # This is the default geom group
+        geom_group = np.array([1, 1, 1, 1, 1, 1], dtype=np.uint8)  # This is the default geom group
 
     # Setup int array
     geomid = np.empty((1, 1), dtype=np.int32)
@@ -47,4 +47,4 @@ def raycast(sim, geom1_id=None, geom2_id=None, pt1=None, pt2=None, geom_group=No
                          body1,  # Bodyid to exclude
                          geomid)
     collision_geom = geomid if geomid != -1 else None
-    return dist, collision_geom
+    return dist, collision_geom.item()  # TODO: Am I correct that the ray can only hit one thing surely right?!

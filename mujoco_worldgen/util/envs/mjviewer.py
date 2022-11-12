@@ -150,8 +150,9 @@ class MjRenderContext:
 
     def __init__(self, sim, offscreen: bool = True, device_id: int = -1, opengl_backend=None, quiet=False):
         maxgeom = 1000
-        self.sim = sim  # TODO: Is the model already attached?
+        self.sim = sim
         self._model = self.sim.model
+        self._data = self.sim.data
         self._scn = mujoco.MjvScene(self._model, maxgeom)
         self.cam = mujoco.MjvCamera()
         self._pert = mujoco.MjvPerturb()
@@ -223,7 +224,7 @@ class MjRenderContext:
 
     def _init_camera(self, sim):
         # Make the free camera look at the scene
-        self.cam.type = mujoco.mjtGridPos.CAMERA_FREE
+        self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         self.cam.fixedcamid = -1
         for i in range(3):
             self.cam.lookat[i] = np.median(sim.data.geom_xpos[:, i])
@@ -378,7 +379,6 @@ class MjRenderContext:
 
     def __del__(self):
         self._con.free()
-        mujoco.mjv_freeScene(self._scn)
 
 
 class MjRenderContextWindow(MjRenderContext):
@@ -402,6 +402,9 @@ class MjRenderContextWindow(MjRenderContext):
             self.render_swap_callback()
         glfw.swap_buffers(self.window)
 
+class MjRenderContextOffscreen(MjRenderContext):
+    def __init__(self, sim, device_id: int) -> None:
+        super().__init__(sim, offscreen=True, device_id=device_id)
 
 class MjViewerBasic(MjRenderContextWindow):
     """
@@ -466,11 +469,11 @@ class MjViewerBasic(MjRenderContextWindow):
                 glfw.get_key(window, glfw.KEY_LEFT_SHIFT) == glfw.PRESS or
                 glfw.get_key(window, glfw.KEY_RIGHT_SHIFT) == glfw.PRESS)
         if self._button_right_pressed:
-            action = mujoco.mjtGridPos.MOUSE_MOVE_H if mod_shift else mujoco.mjtGridPos.MOUSE_MOVE_V
+            action = mujoco.mjtMouse.mjMOUSE_MOVE_H if mod_shift else mujoco.mjtMouse.mjMOUSE_MOVE_V
         elif self._button_left_pressed:
-            action = mujoco.mjtGridPos.MOUSE_ROTATE_H if mod_shift else mujoco.mjtGridPos.MOUSE_ROTATE_V
+            action = mujoco.mjtMouse.mjMOUSE_ROTATE_H if mod_shift else mujoco.mjtMouse.mjMOUSE_ROTATE_V
         else:
-            action = mujoco.mjtGridPos.MOUSE_ZOOM
+            action = mujoco.mjtMouse.mjMOUSE_ZOOM
 
         # Determine
         dx = int(self._scale * xpos) - self._last_mouse_x
@@ -495,7 +498,7 @@ class MjViewerBasic(MjRenderContextWindow):
 
     def _scroll_callback(self, window, x_offset, y_offset):
         with self._gui_lock:
-            self.move_camera(mujoco.mjtGridPos.MOUSE_ZOOM, 0, -0.05 * y_offset)
+            self.move_camera(mujoco.mjtMouse.mjMOUSE_ZOOM, 0, -0.05 * y_offset)
 
 
 class MjViewer(MjViewerBasic):
@@ -634,69 +637,69 @@ class MjViewer(MjViewerBasic):
 
     def _create_full_overlay(self):
         if self._render_every_frame:
-            self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "", "")
+            self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "", "")
         else:
-            self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "Run speed = %.3f x real time" %
+            self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "Run speed = %.3f x real time" %
                              self._run_speed, "[S]lower, [F]aster")
         self.add_overlay(
-            mujoco.mjtGridPos.GRID_TOPLEFT, "Ren[d]er every frame", "Off" if self._render_every_frame else "On")
-        self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "Switch camera (#cams = %d)" % (self._ncam + 1),
+            mujoco.mjtGridPos.mjGRID_TOPLEFT, "Ren[d]er every frame", "Off" if self._render_every_frame else "On")
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "Switch camera (#cams = %d)" % (self._ncam + 1),
                          "[Tab] (camera ID = %d)" % self.cam.fixedcamid)
-        self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "[C]ontact forces", "Off" if self.vopt.flags[
-                                                                                          10] == 1 else "On")
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT,
+                         "[C]ontact forces", "Off" if self._vopt.flags[10] == 1 else "On")
         self.add_overlay(
-            mujoco.mjtGridPos.GRID_TOPLEFT, "Referenc[e] frames", "Off" if self.vopt.frame == 1 else "On")
-        self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT,
+            mujoco.mjtGridPos.mjGRID_TOPLEFT, "Referenc[e] frames", "Off" if self._vopt.frame == 1 else "On")
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT,
                          "T[r]ansparent", "On" if self._transparent else "Off")
         self.add_overlay(
-            mujoco.mjtGridPos.GRID_TOPLEFT, "Display [M]ocap bodies", "On" if self._show_mocap else "Off")
+            mujoco.mjtGridPos.mjGRID_TOPLEFT, "Display [M]ocap bodies", "On" if self._show_mocap else "Off")
         if self._paused is not None:
             if not self._paused:
-                self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "Stop", "[Space]")
+                self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "Stop", "[Space]")
             else:
-                self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "Start", "[Space]")
-            self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT,
+                self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "Start", "[Space]")
+            self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT,
                              "Advance simulation by one step", "[right arrow]")
-        self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "[H]ide Menu", "")
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "[H]ide Menu", "")
         if self._record_video:
             ndots = int(7 * (time.time() % 1))
             dots = ("." * ndots) + (" " * (6 - ndots))
-            self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT,
+            self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT,
                              "Record [V]ideo (On) " + dots, "")
         else:
-            self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "Record [V]ideo (Off) ", "")
+            self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "Record [V]ideo (Off) ", "")
         if self._video_idx > 0:
             fname = self._video_path % (self._video_idx - 1)
-            self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "   saved as %s" % fname, "")
+            self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "   saved as %s" % fname, "")
 
-        self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "Cap[t]ure frame", "")
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "Cap[t]ure frame", "")
         if self._image_idx > 0:
             fname = self._image_path % (self._image_idx - 1)
-            self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "   saved as %s" % fname, "")
-        self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "Start [i]pdb", "")
+            self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "   saved as %s" % fname, "")
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "Start [i]pdb", "")
         if self._record_video:
             extra = " (while video is not recorded)"
         else:
             extra = ""
-        self.add_overlay(mujoco.mjtGridPos.GRID_BOTTOMLEFT, "FPS", "%d%s" %
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_BOTTOMLEFT, "FPS", "%d%s" %
                          (1 / self._time_per_render, extra))
-        self.add_overlay(mujoco.mjtGridPos.GRID_BOTTOMLEFT, "Solver iterations", str(
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_BOTTOMLEFT, "Solver iterations", str(
             self.sim.data.solver_iter + 1))
         step = round(self.sim.data.time / self.sim.model.opt.timestep)
-        self.add_overlay(mujoco.mjtGridPos.GRID_BOTTOMRIGHT, "Step", str(step))
-        self.add_overlay(mujoco.mjtGridPos.GRID_BOTTOMRIGHT, "timestep", "%.5f" % self.sim.model.opt.timestep)
-        self.add_overlay(mujoco.mjtGridPos.GRID_BOTTOMRIGHT, "n_substeps", str(self.sim.nsubsteps))
-        self.add_overlay(mujoco.mjtGridPos.GRID_TOPLEFT, "Toggle geomgroup visibility", "0-4")
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_BOTTOMRIGHT, "Step", str(step))
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_BOTTOMRIGHT, "timestep", "%.5f" % self.sim.model.opt.timestep)
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_BOTTOMRIGHT, "n_substeps", str(self.sim.nsubsteps))
+        self.add_overlay(mujoco.mjtGridPos.mjGRID_TOPLEFT, "Toggle geomgroup visibility", "0-4")
 
     def key_callback(self, window, key, scancode, action, mods):
         if action != glfw.RELEASE:
             return
         elif key == glfw.KEY_TAB:  # Switches cameras.
             self.cam.fixedcamid += 1
-            self.cam.type = mujoco.mjtGridPos.CAMERA_FIXED
+            self.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
             if self.cam.fixedcamid >= self._ncam:
                 self.cam.fixedcamid = -1
-                self.cam.type = mujoco.mjtGridPos.CAMERA_FREE
+                self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         elif key == glfw.KEY_H:  # hides all overlay.
             self._hide_overlay = not self._hide_overlay
         elif key == glfw.KEY_SPACE and self._paused is not None:  # stops simulation.
@@ -705,9 +708,8 @@ class MjViewer(MjViewerBasic):
         elif key == glfw.KEY_RIGHT and self._paused is not None:
             self._advance_by_one_step = True
             self._paused = True
-        elif key == glfw.KEY_V or \
-                (
-                        key == glfw.KEY_ESCAPE and self._record_video):  # Records video. Trigers with V or if in progress by ESC.
+        # Records video. Trigers with V or if in progress by ESC.
+        elif key == glfw.KEY_V or (key == glfw.KEY_ESCAPE and self._record_video):
             self._record_video = not self._record_video
             if self._record_video:
                 fps = (1 / self._time_per_render)
@@ -731,12 +733,12 @@ class MjViewer(MjViewerBasic):
         elif key == glfw.KEY_F:  # Speeds up simulation.
             self._run_speed *= 2.0
         elif key == glfw.KEY_C:  # Displays contact forces.
-            vopt = self.vopt
+            vopt = self._vopt
             vopt.flags[10] = vopt.flags[11] = not vopt.flags[10]
         elif key == glfw.KEY_D:  # turn off / turn on rendering every frame.
             self._render_every_frame = not self._render_every_frame
         elif key == glfw.KEY_E:
-            vopt = self.vopt
+            vopt = self._vopt
             vopt.frame = 1 - vopt.frame
         elif key == glfw.KEY_R:  # makes everything little bit transparent.
             self._transparent = not self._transparent
@@ -759,7 +761,7 @@ class MjViewer(MjViewerBasic):
                                 self.sim.model.geom_rgba[
                                     geom_idx, 3] = self.sim.extras[geom_idx]
         elif key in (glfw.KEY_0, glfw.KEY_1, glfw.KEY_2, glfw.KEY_3, glfw.KEY_4):
-            self.vopt.geomgroup[key - glfw.KEY_0] ^= 1
+            self._vopt.geomgroup[key - glfw.KEY_0] ^= 1
         super().key_callback(window, key, scancode, action, mods)
 
 
