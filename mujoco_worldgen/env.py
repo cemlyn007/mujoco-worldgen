@@ -148,6 +148,9 @@ class Sim:
         self._geom_names, self._geom_name2id, self._geom_id2name = self._extract_mj_names(
             self.model.name_geomadr, self.model.ngeom, mujoco.mjtObj.mjOBJ_GEOM
         )
+        self._site_names, self._site_name2id, self._site_id2name = self._extract_mj_names(
+            self.model.name_siteadr, self.model.nsite, mujoco.mjtObj.mjOBJ_SITE
+        )
 
     @property
     def body_names(self) -> tuple[str]:
@@ -184,6 +187,18 @@ class Sim:
     @property
     def geom_id2name(self) -> dict[int, str]:
         return self._geom_id2name
+
+    @property
+    def site_names(self) -> tuple[str]:
+        return self._site_names
+
+    @property
+    def site_name2id(self) -> dict[str, int]:
+        return self._site_name2id
+
+    @property
+    def site_id2name(self) -> dict[int, str]:
+        return self._site_id2name
 
     def reset(self) -> None:
         """
