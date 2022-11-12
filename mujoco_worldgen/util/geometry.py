@@ -46,5 +46,5 @@ def raycast(sim, geom1_id=None, geom2_id=None, pt1=None, pt2=None, geom_group=No
                          flg_static,  # flg_static. TODO idk what this is
                          body1,  # Bodyid to exclude
                          geomid)
-    collision_geom = geomid if geomid != -1 else None
-    return dist, collision_geom.item()  # TODO: Am I correct that the ray can only hit one thing surely right?!
+    collision_geom = geomid.item() if geomid != -1 else None
+    return dist, collision_geom
