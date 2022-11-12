@@ -925,7 +925,22 @@ class Env(gym.Env):
         return self.get_obs(self.sim)
 
     def render(self, mode='human', close=False):
-        raise ValueError("Unsupported mode %s" % mode)
+        if close:
+            # TODO: actually close the inspection viewer
+            return
+        assert self.sim is not None, "Please reset environment before render()."
+        if mode == 'human':
+            # Use a nicely-interactive version of the mujoco viewer
+            if self.viewer is None:
+                # Inline import since this is only relevant on platforms
+                # which have GLFW support.
+                from mujoco_worldgen.util.envs import mjviewer
+                self.viewer = mjviewer.MjViewer(self.sim)
+            self.viewer.render()
+        elif mode == 'rgb_array':
+            return self.sim.render(500, 500)
+        else:
+            raise ValueError("Unsupported mode %s" % mode)
 
 
 class EmptyEnvException(Exception):
